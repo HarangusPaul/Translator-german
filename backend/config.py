@@ -49,8 +49,9 @@ class ASRConfig:
     # temperature=0 → pure beam search, minimises hallucinations
     temperature: float = 0.0
     word_timestamps: bool = True
-    # faster-whisper built-in VAD as a second pass guard
-    vad_filter: bool = True
+    # faster-whisper built-in VAD — disabled on macOS (Silero torch.hub download
+    # crashes with OMP conflict); client-side RMS gate in audio worklet suffices
+    vad_filter: bool = False
     vad_min_silence_ms: int = 500
     # Disable to keep each utterance independent and reduce drift
     condition_on_previous_text: bool = False

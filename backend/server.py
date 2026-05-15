@@ -21,8 +21,9 @@ from typing import Optional
 
 import numpy as np
 import torch
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
@@ -70,6 +71,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
 # ── Model cache (keyed by Direction.value) ─────────────────────────────────
 _pipeline_models: dict[str, tuple[ASRModule, TranslationModule, TTSModule]] = {}
 _model_load_lock = asyncio.Lock()
@@ -85,7 +91,7 @@ async def _get_models(direction: Direction) -> tuple[ASRModule, TranslationModul
             return _pipeline_models[key]
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        compute_type = "float16" if device == "cuda" else "int8"
+        compute_type = "float16" if device == "cuda" else "float32"
         logger.info("Loading models for %s on %s …", direction.value, device)
 
         asr = ASRModule(
@@ -173,9 +179,13 @@ class StreamingTranslationPipeline:
 
     async def handle_audio_frame(self, frame: bytes) -> None:
         if len(frame) == 0:
+            if self._audio_buf:
+                logger.info("Silence boundary — buf=%d bytes, finalising", len(self._audio_buf))
             await self._finalize_utterance()
             return
 
+        if not self._audio_buf:
+            logger.info("First audio frame received (%d bytes)", len(frame))
         self._audio_buf.extend(frame)
 
         # Start the partial-transcription heartbeat if it isn't running
@@ -187,7 +197,10 @@ class StreamingTranslationPipeline:
     async def _partial_timer_loop(self) -> None:
         while True:
             await asyncio.sleep(self.PARTIAL_INTERVAL_S)
-            await self._run_partial()
+            try:
+                await self._run_partial()
+            except Exception:
+                logger.exception("Partial transcription loop error")
 
     async def _run_partial(self) -> None:
         if len(self._audio_buf) < self.MIN_PARTIAL_BYTES:

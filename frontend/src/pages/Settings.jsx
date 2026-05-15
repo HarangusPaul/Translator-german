@@ -1,14 +1,23 @@
 import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { apiFetch } from "../api";
 
 function Toggle({ on, onToggle }) {
   return <div className={`toggle${on ? "" : " off"}`} onClick={onToggle} />;
 }
 
 export default function Settings() {
-  const { user, logout } = useAuth();
+  const { user, logout, getFreshToken } = useAuth();
   const [activeNav, setActiveNav] = useState("Profile");
-  const [prefs, setPrefs] = useState({ defaultDir: "DE → EN", tts: true, partial: true, asrModel: "large-v3", autoSave: true });
+  const [prefs, setPrefs] = useState({
+    defaultDir: "DE → EN",
+    tts: true,
+    partial: true,
+    asrModel: "large-v3",
+    autoSave: true,
+  });
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState("");
 
   const toggle = (key) => setPrefs((p) => ({ ...p, [key]: !p[key] }));
 
@@ -25,12 +34,32 @@ export default function Settings() {
     return user?.email?.[0]?.toUpperCase() ?? "?";
   }
 
+  async function deleteAllSessions() {
+    if (!confirm("Delete ALL sessions permanently? This cannot be undone.")) return;
+    setDeleting(true);
+    setDeleteMsg("");
+    try {
+      const token = await getFreshToken();
+      const sessions = await apiFetch("/sessions", token);
+      await Promise.all(sessions.map((s) => apiFetch(`/sessions/${s.id}`, token, { method: "DELETE" })));
+      setDeleteMsg(`Deleted ${sessions.length} session${sessions.length !== 1 ? "s" : ""}.`);
+    } catch (err) {
+      setDeleteMsg(`Error: ${err.message}`);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="page-settings">
       <div className="settings-nav">
         <h2>Settings</h2>
         {navItems.map((n) => (
-          <div key={n.label} className={`snav-item${activeNav === n.label ? " active" : ""}`} onClick={() => setActiveNav(n.label)}>
+          <div
+            key={n.label}
+            className={`snav-item${activeNav === n.label ? " active" : ""}`}
+            onClick={() => setActiveNav(n.label)}
+          >
             <i className={`ti ${n.icon}`} /> {n.label}
           </div>
         ))}
@@ -50,29 +79,48 @@ export default function Settings() {
                   {user?.providerData?.[0]?.providerId === "google.com" ? "Signed in with Google" : "Email account"}
                 </div>
               </div>
-              <button className="icon-btn" title="Edit"><i className="ti ti-edit" /></button>
             </div>
 
             <div className="setting-group">
               <h3>Translation preferences</h3>
               <div className="setting-row">
-                <div><div className="setting-label">Default direction</div><div className="setting-desc">Which language you hear most</div></div>
-                <select className="setting-select" value={prefs.defaultDir} onChange={(e) => setPrefs((p) => ({ ...p, defaultDir: e.target.value }))}>
+                <div>
+                  <div className="setting-label">Default direction</div>
+                  <div className="setting-desc">Which language you hear most</div>
+                </div>
+                <select
+                  className="setting-select"
+                  value={prefs.defaultDir}
+                  onChange={(e) => setPrefs((p) => ({ ...p, defaultDir: e.target.value }))}
+                >
                   <option>DE → EN</option>
                   <option>EN → DE</option>
                 </select>
               </div>
               <div className="setting-row">
-                <div><div className="setting-label">TTS playback</div><div className="setting-desc">Read translations aloud automatically</div></div>
+                <div>
+                  <div className="setting-label">TTS playback</div>
+                  <div className="setting-desc">Read translations aloud automatically</div>
+                </div>
                 <Toggle on={prefs.tts} onToggle={() => toggle("tts")} />
               </div>
               <div className="setting-row">
-                <div><div className="setting-label">Partial transcription</div><div className="setting-desc">Show words as they are spoken</div></div>
+                <div>
+                  <div className="setting-label">Partial transcription</div>
+                  <div className="setting-desc">Show words as they are spoken</div>
+                </div>
                 <Toggle on={prefs.partial} onToggle={() => toggle("partial")} />
               </div>
               <div className="setting-row">
-                <div><div className="setting-label">ASR model</div><div className="setting-desc">Larger = more accurate, slower</div></div>
-                <select className="setting-select" value={prefs.asrModel} onChange={(e) => setPrefs((p) => ({ ...p, asrModel: e.target.value }))}>
+                <div>
+                  <div className="setting-label">ASR model</div>
+                  <div className="setting-desc">Larger = more accurate, slower</div>
+                </div>
+                <select
+                  className="setting-select"
+                  value={prefs.asrModel}
+                  onChange={(e) => setPrefs((p) => ({ ...p, asrModel: e.target.value }))}
+                >
                   <option>large-v3</option>
                   <option>medium</option>
                   <option>small</option>
@@ -83,16 +131,32 @@ export default function Settings() {
             <div className="setting-group">
               <h3>Data</h3>
               <div className="setting-row">
-                <div><div className="setting-label">Auto-save sessions</div><div className="setting-desc">Save to Firestore after each message</div></div>
+                <div>
+                  <div className="setting-label">Auto-save sessions</div>
+                  <div className="setting-desc">Save to Firestore after each message</div>
+                </div>
                 <Toggle on={prefs.autoSave} onToggle={() => toggle("autoSave")} />
               </div>
               <div className="setting-row">
-                <div><div className="setting-label">Sign out</div><div className="setting-desc">Sign out of your account</div></div>
+                <div>
+                  <div className="setting-label">Sign out</div>
+                  <div className="setting-desc">Sign out of your account</div>
+                </div>
                 <button className="danger-btn" onClick={logout}>Sign out</button>
               </div>
               <div className="setting-row">
-                <div><div className="setting-label">Delete all sessions</div><div className="setting-desc">Permanently removes all history</div></div>
-                <button className="danger-btn">Delete all</button>
+                <div>
+                  <div className="setting-label">Delete all sessions</div>
+                  <div className="setting-desc">Permanently removes all history</div>
+                  {deleteMsg && (
+                    <div style={{ fontSize: 11, marginTop: 4, color: deleteMsg.startsWith("Error") ? "var(--danger)" : "var(--text-faint)" }}>
+                      {deleteMsg}
+                    </div>
+                  )}
+                </div>
+                <button className="danger-btn" onClick={deleteAllSessions} disabled={deleting}>
+                  {deleting ? "Deleting…" : "Delete all"}
+                </button>
               </div>
             </div>
           </>

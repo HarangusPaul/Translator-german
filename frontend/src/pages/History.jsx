@@ -1,46 +1,94 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { apiFetch } from "../api";
 
-const SESSIONS = [
-  { id: 1, title: "Doctor appointment", preview: "Guten Tag, ich habe einen Termin…", dir: "DE→EN", date: "Today, 14:32", msgs: 12 },
-  { id: 2, title: "Hotel check-in", preview: "Where is my room key…", dir: "EN→DE", date: "Yesterday, 09:15", msgs: 8 },
-  { id: 3, title: "Business meeting", preview: "Die Quartalsberichte zeigen…", dir: "DE→EN", date: "May 12, 11:00", msgs: 18 },
-  { id: 4, title: "Airport help desk", preview: "My flight was delayed…", dir: "EN→DE", date: "May 10, 16:40", msgs: 6 },
-  { id: 5, title: "Restaurant order", preview: "Ich möchte bitte bestellen…", dir: "DE→EN", date: "May 9, 20:12", msgs: 4 },
-];
+function formatDate(ts) {
+  if (!ts) return "";
+  const d = ts?._seconds ? new Date(ts._seconds * 1000) : new Date(ts);
+  if (isNaN(d)) return "";
+  const now = new Date();
+  const diff = now - d;
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (diff < 86_400_000) return `Today, ${time}`;
+  if (diff < 172_800_000) return `Yesterday, ${time}`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" }) + `, ${time}`;
+}
 
-export default function History() {
+function isThisWeek(ts) {
+  if (!ts) return false;
+  const d = ts?._seconds ? new Date(ts._seconds * 1000) : new Date(ts);
+  return !isNaN(d) && (new Date() - d) < 7 * 86_400_000;
+}
+
+export default function History({ onOpenSession }) {
+  const { getFreshToken } = useAuth();
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("All");
   const [search, setSearch] = useState("");
 
+  useEffect(() => {
+    async function load() {
+      try {
+        const token = await getFreshToken();
+        const data = await apiFetch("/sessions", token);
+        setSessions(data);
+      } catch (err) {
+        console.error("Failed to load sessions:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [getFreshToken]);
+
+  async function deleteSession(id) {
+    try {
+      const token = await getFreshToken();
+      await apiFetch(`/sessions/${id}`, token, { method: "DELETE" });
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  }
+
   const filters = ["All", "DE→EN", "EN→DE", "This week"];
 
-  const rows = SESSIONS.filter((s) => {
-    if (filter === "DE→EN" && s.dir !== "DE→EN") return false;
-    if (filter === "EN→DE" && s.dir !== "EN→DE") return false;
-    if (filter === "This week" && !["Today", "Yesterday"].some((d) => s.date.startsWith(d))) return false;
+  const rows = sessions.filter((s) => {
+    const dirStr = s.direction === "de_to_en" ? "DE→EN" : "EN→DE";
+    if (filter === "DE→EN" && dirStr !== "DE→EN") return false;
+    if (filter === "EN→DE" && dirStr !== "EN→DE") return false;
+    if (filter === "This week" && !isThisWeek(s.last_active)) return false;
     if (search && !s.title.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
-
-  const total = SESSIONS.reduce((a, s) => a + s.msgs, 0);
 
   return (
     <div className="page-history">
       <div className="hist-header">
         <div>
           <h1>Session history</h1>
-          <p>{SESSIONS.length} sessions · {total} messages total</p>
+          <p>{sessions.length} sessions total</p>
         </div>
-        <button className="icon-btn" title="Export all"><i className="ti ti-download" /></button>
       </div>
 
       <div className="hist-filter-row">
         {filters.map((f) => (
-          <button key={f} className={`hf-pill${filter === f ? " active" : ""}`} onClick={() => setFilter(f)}>{f}</button>
+          <button
+            key={f}
+            className={`hf-pill${filter === f ? " active" : ""}`}
+            onClick={() => setFilter(f)}
+          >
+            {f}
+          </button>
         ))}
         <div className="search-box">
           <i className="ti ti-search" style={{ fontSize: 13 }} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search sessions…" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search sessions…"
+          />
         </div>
       </div>
 
@@ -48,30 +96,42 @@ export default function History() {
         <div className="th">Session</div>
         <div className="th">Direction</div>
         <div className="th">Date</div>
-        <div className="th" style={{ textAlign: "right" }}>Messages</div>
+        <div className="th" style={{ textAlign: "right" }}>Actions</div>
       </div>
 
-      {rows.map((s) => (
-        <div key={s.id} className="hist-row">
-          <div>
-            <div className="hr-title">{s.title}</div>
-            <div className="hr-preview">{s.preview}</div>
-          </div>
-          <div>
-            <span className={`hr-dir ${s.dir === "DE→EN" ? "de" : "en"}`}>{s.dir}</span>
-          </div>
-          <div className="hr-date">{s.date}</div>
-          <div className="hr-actions">
-            <span className="hr-count">{s.msgs}</span>
-            <button className="icon-btn" title="Open"><i className="ti ti-player-play" /></button>
-            <button className="icon-btn" title="Delete"><i className="ti ti-trash" /></button>
-          </div>
-        </div>
-      ))}
-
-      {rows.length === 0 && (
+      {loading && (
         <div style={{ padding: "32px 24px", textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
-          No sessions match your filter.
+          Loading…
+        </div>
+      )}
+
+      {!loading && rows.map((s) => {
+        const dirStr = s.direction === "de_to_en" ? "DE→EN" : "EN→DE";
+        return (
+          <div key={s.id} className="hist-row">
+            <div>
+              <div className="hr-title">{s.title}</div>
+              {s.notes && <div className="hr-preview">{s.notes}</div>}
+            </div>
+            <div>
+              <span className={`hr-dir ${s.direction === "de_to_en" ? "de" : "en"}`}>{dirStr}</span>
+            </div>
+            <div className="hr-date">{formatDate(s.last_active)}</div>
+            <div className="hr-actions">
+              <button className="icon-btn" title="Open" onClick={() => onOpenSession(s.id)}>
+                <i className="ti ti-player-play" />
+              </button>
+              <button className="icon-btn" title="Delete" onClick={() => deleteSession(s.id)}>
+                <i className="ti ti-trash" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+
+      {!loading && rows.length === 0 && (
+        <div style={{ padding: "32px 24px", textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>
+          {sessions.length === 0 ? "No sessions yet. Start a new one!" : "No sessions match your filter."}
         </div>
       )}
     </div>
