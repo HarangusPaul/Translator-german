@@ -307,15 +307,21 @@ class StreamingTranslationPipeline:
         self._last_translated_prefix = ""
         self._last_translation_so_far = ""
 
+        import numpy as _np
+        rms = float(_np.sqrt(_np.mean(audio ** 2)))
+        logger.info("Final transcription: %.3f s audio, RMS=%.4f", len(audio) / 16000, rms)
+
         # Final transcription — beam_size=5, full quality
         loop = asyncio.get_running_loop()
         transcript_obj = await loop.run_in_executor(
             self._executor, self._asr._transcribe_sync, audio
         )
         if not transcript_obj or not transcript_obj.text.strip():
+            logger.warning("Transcription returned empty for %.3f s audio (RMS=%.4f)", len(audio) / 16000, rms)
             return
 
         final_text = transcript_obj.text.strip()
+        logger.info("Transcript: %r → sending to client", final_text)
         await self.ws.send_json({"type": "transcript_final", "text": final_text})
 
         # Full, clean translation
