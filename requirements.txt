@@ -1,0 +1,54 @@
+# ==============================================================================
+# Real-time German <-> English Audio Translation
+# Python 3.10+  |  tested on Windows 10 / Ubuntu 22.04
+# ==============================================================================
+
+# --- PyTorch (install CUDA build separately if needed) -----------------------
+# For CUDA 12.x:
+#   pip install torch>=2.1.0 --index-url https://download.pytorch.org/whl/cu121
+# For CPU-only:
+#   pip install torch>=2.1.0 --index-url https://download.pytorch.org/whl/cpu
+torch>=2.1.0
+
+# --- ASR: faster-whisper (CTranslate2 backend, 4-8x faster than openai-whisper)
+faster-whisper>=1.0.0
+
+# --- NMT: HuggingFace Transformers (MarianMT)
+transformers>=4.36.0
+sentencepiece>=0.1.99   # MarianMT tokeniser dependency
+sacremoses>=0.1.1       # BPE tokenisation used by some Marian variants
+
+# --- TTS: Microsoft Edge Neural TTS (no local model download)
+edge-tts>=6.1.9
+
+# --- Audio I/O
+sounddevice>=0.4.6
+numpy>=1.24.0
+scipy>=1.11.0           # optional resampling utilities
+
+# --- MP3 decoding fallback (primary decoder is ffmpeg via subprocess)
+pydub>=0.25.1
+
+# --- NLP: sentence boundary detection
+spacy>=3.7.0
+# After installing spaCy, download the language models:
+#   python -m spacy download de_core_news_sm   (German)
+#   python -m spacy download en_core_web_sm    (English)
+
+# --- Silero VAD is loaded automatically via torch.hub (no pip entry needed)
+#     It downloads ~1 MB on first run to ~/.cache/torch/hub/
+
+# ==============================================================================
+# System dependencies (NOT installable via pip)
+# ==============================================================================
+# ffmpeg  – required for MP3 → PCM decoding of edge-tts output
+#   Windows:  winget install --id Gyan.FFmpeg
+#             OR  choco install ffmpeg
+#   macOS:    brew install ffmpeg
+#   Ubuntu:   sudo apt install ffmpeg
+#
+# PortAudio – required by sounddevice for microphone access
+#   Windows:  bundled with sounddevice wheel (usually automatic)
+#   macOS:    brew install portaudio
+#   Ubuntu:   sudo apt install portaudio19-dev
+# ==============================================================================
