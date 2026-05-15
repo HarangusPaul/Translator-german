@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 frontend/node_modules/
 frontend/dist/
+backend/firebase-credentials.json
+backend/.env
+frontend/.env
