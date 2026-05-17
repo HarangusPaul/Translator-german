@@ -24,6 +24,22 @@
   --radius-lg: 12px;
 }
 
+[data-theme="dark"] {
+  --bg: #1a1a1a;
+  --white: #242424;
+  --faint: #2a2a2a;
+  --muted: #2e2e2e;
+  --border: #333;
+  --border-mid: #444;
+  --border-strong: #3a3a3a;
+  --text: #e8e8e8;
+  --text-mid: #aaa;
+  --text-muted: #888;
+  --text-faint: #555;
+  --green-light: #1a3d30;
+  --blue-light: #1a2d3d;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background: var(--bg);

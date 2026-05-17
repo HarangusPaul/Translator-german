@@ -13,6 +13,12 @@ export default function App() {
   const [currentSessionId, setCurrentSessionId] = useState(null);
 
   useEffect(() => {
+    if (localStorage.getItem("darkMode") === "true") {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  }, []);
+
+  useEffect(() => {
     if (!loading) {
       setActivePage(user ? "dashboard" : "login");
     }

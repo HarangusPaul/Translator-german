@@ -9,6 +9,7 @@ function Toggle({ on, onToggle }) {
 export default function Settings() {
   const { user, logout, getFreshToken } = useAuth();
   const [activeNav, setActiveNav] = useState("Profile");
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem("darkMode") === "true");
   const [prefs, setPrefs] = useState({
     defaultDir: "DE → EN",
     tts: true,
@@ -20,6 +21,13 @@ export default function Settings() {
   const [deleteMsg, setDeleteMsg] = useState("");
 
   const toggle = (key) => setPrefs((p) => ({ ...p, [key]: !p[key] }));
+
+  const toggleDark = () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    localStorage.setItem("darkMode", String(next));
+    document.documentElement.setAttribute("data-theme", next ? "dark" : "");
+  };
 
   const navItems = [
     { label: "Profile", icon: "ti-user" },
@@ -78,6 +86,17 @@ export default function Settings() {
                 <div style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
                   {user?.providerData?.[0]?.providerId === "google.com" ? "Signed in with Google" : "Email account"}
                 </div>
+              </div>
+            </div>
+
+            <div className="setting-group">
+              <h3>Appearance</h3>
+              <div className="setting-row">
+                <div>
+                  <div className="setting-label">Dark theme</div>
+                  <div className="setting-desc">Switch the interface to dark mode</div>
+                </div>
+                <Toggle on={darkMode} onToggle={toggleDark} />
               </div>
             </div>
 
