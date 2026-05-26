@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import TranslatorPage from "./pages/TranslatorPage";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
+import Summaries from "./pages/Summaries";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -64,6 +65,7 @@ export default function App() {
       {user && activePage === "history" && (
         <History onOpenSession={openSession} />
       )}
+      {user && activePage === "summaries" && <Summaries />}
       {user && activePage === "settings" && <Settings />}
     </div>
   );

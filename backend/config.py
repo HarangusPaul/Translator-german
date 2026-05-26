@@ -76,3 +76,23 @@ class TTSConfig:
     volume: str = "+0%"
     # edge-tts always streams MP3; we resample to this for playback
     output_sample_rate: int = 24_000
+
+
+@dataclass
+class SummaryConfig:
+    # Your requested model
+    model_id: str = "OBLITERATUS/gemma-4-E4B-it-OBLITERATED"
+
+    # Generation controls
+    max_input_tokens: int = 2048
+    max_new_tokens: int = 256
+    temperature: float = 0.2
+    top_p: float = 0.9
+    repetition_penalty: float = 1.1
+    do_sample: bool = True
+
+    # Input trimming to avoid context overflows
+    max_transcript_chars: int = 16_000
+
+    # If True, rely on device_map="auto" (requires accelerate)
+    use_device_map_auto: bool = True
