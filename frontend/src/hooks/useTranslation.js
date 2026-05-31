@@ -75,6 +75,7 @@ export default function useTranslation(sessionId, direction, playTTS = true) {
           const translation = msg.text;
           setFinalTranslation((prev) => (prev ? prev + "\n" + translation : translation));
           setPartialTranslation("");
+          setStatus("idle");
 
           // Persist via backend (server writes to Firestore on save_message)
           const ws = wsRef.current;
@@ -94,6 +95,10 @@ export default function useTranslation(sessionId, direction, playTTS = true) {
 
         case "audio":
           if (playTTS) playMP3(msg.data);
+          break;
+
+        case "status":
+          if (msg.message === "transcribing") setStatus("transcribing");
           break;
 
         case "error":

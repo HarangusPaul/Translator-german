@@ -41,14 +41,14 @@ class AudioConfig:
 
 @dataclass
 class ASRConfig:
-    model_size: str = "large-v3"
+    model_size: str = "small"
     device: str = "cuda"
-    # float16 on GPU; use int8 or int8_float16 for CPU / low-VRAM GPU
+    # float16 on GPU; float32 on CPU (int8 variants crash on macOS)
     compute_type: str = "float16"
-    beam_size: int = 5
+    beam_size: int = 1
     # temperature=0 → pure beam search, minimises hallucinations
     temperature: float = 0.0
-    word_timestamps: bool = True
+    word_timestamps: bool = False
     # faster-whisper built-in VAD — disabled on macOS (Silero torch.hub download
     # crashes with OMP conflict); client-side RMS gate in audio worklet suffices
     vad_filter: bool = False

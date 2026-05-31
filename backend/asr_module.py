@@ -57,6 +57,8 @@ class ASRModule:
             self.cfg.model_size,
             device=self.cfg.device,
             compute_type=self.cfg.compute_type,
+            cpu_threads=1,  # prevents OMP deadlock with PyTorch on macOS
+            num_workers=1,
         )
         logger.info("Whisper ready")
 

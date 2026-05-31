@@ -14,6 +14,7 @@ import base64
 import json
 import logging
 import os
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -56,7 +57,10 @@ for _lib in ("transformers", "faster_whisper", "httpx", "httpcore", "urllib3"):
 logger = logging.getLogger("server")
 
 # ── Firebase init ──────────────────────────────────────────────────────────
-_cred_path = os.getenv("FIREBASE_CREDENTIALS", "backend/firebase-credentials.json")
+_cred_path = os.getenv(
+    "FIREBASE_CREDENTIALS",
+    str(Path(__file__).parent / "firebase-credentials.json"),
+)
 firebase_admin.initialize_app(credentials.Certificate(_cred_path))
 db = firestore.client()
 
@@ -138,10 +142,12 @@ class StreamingTranslationPipeline:
     """
 
     PARTIAL_INTERVAL_S: float = 0.8
+    MAX_UTTERANCE_S: float = 30.0                              # force-flush at 30 s
     SAMPLE_RATE: int = 16_000
     BYTES_PER_SAMPLE: int = 2                                  # Int16
     MIN_PARTIAL_BYTES: int = int(SAMPLE_RATE * 0.4 * BYTES_PER_SAMPLE)  # 400 ms
     MIN_FINAL_BYTES: int = int(SAMPLE_RATE * 0.3 * BYTES_PER_SAMPLE)    # 300 ms
+    MAX_UTTERANCE_BYTES: int = int(SAMPLE_RATE * MAX_UTTERANCE_S * BYTES_PER_SAMPLE)
 
     def __init__(
         self,
@@ -187,6 +193,12 @@ class StreamingTranslationPipeline:
         if not self._audio_buf:
             logger.info("First audio frame received (%d bytes)", len(frame))
         self._audio_buf.extend(frame)
+
+        # Force-flush when the buffer exceeds Whisper's sweet spot
+        if len(self._audio_buf) >= self.MAX_UTTERANCE_BYTES:
+            logger.info("Max utterance length reached — force-flushing")
+            await self._finalize_utterance()
+            return
 
         # Start the partial-transcription heartbeat if it isn't running
         if self._partial_timer_task is None or self._partial_timer_task.done():
@@ -311,11 +323,16 @@ class StreamingTranslationPipeline:
         rms = float(_np.sqrt(_np.mean(audio ** 2)))
         logger.info("Final transcription: %.3f s audio, RMS=%.4f", len(audio) / 16000, rms)
 
-        # Final transcription — beam_size=5, full quality
+        # Final transcription — beam_size=1, fast
+        await self.ws.send_json({"type": "status", "message": "transcribing"})
         loop = asyncio.get_running_loop()
+        logger.info("Transcribing %.3f s …", len(audio) / 16000)
+        import time as _time
+        _t0 = _time.perf_counter()
         transcript_obj = await loop.run_in_executor(
             self._executor, self._asr._transcribe_sync, audio
         )
+        logger.info("Transcription done in %.1f s", _time.perf_counter() - _t0)
         if not transcript_obj or not transcript_obj.text.strip():
             logger.warning("Transcription returned empty for %.3f s audio (RMS=%.4f)", len(audio) / 16000, rms)
             return

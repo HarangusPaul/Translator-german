@@ -8,8 +8,8 @@
 class AudioChunkProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // 128 samples / 16 000 Hz ≈ 8 ms per process() call → 25 calls ≈ 200 ms
-    this._SILENCE_FRAMES = 25;
+    // 128 samples / 16 000 Hz ≈ 8 ms per process() call → 150 calls ≈ 1.2 s
+    this._SILENCE_FRAMES = 150;
     this._RMS_THRESHOLD = 0.01;
     this._silenceFrames = 0;
     this._silenceSignalSent = false;
