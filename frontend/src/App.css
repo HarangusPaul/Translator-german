@@ -477,8 +477,8 @@ body {
   z-index: 200;
 }
 .sum-modal {
-  width: min(820px, 100%);
-  max-height: 85vh;
+  width: min(1066px, 96%);
+  height: 85vh;
   background: var(--white);
   border: 0.5px solid var(--border);
   border-radius: var(--radius-lg);
@@ -526,6 +526,64 @@ body {
 .sum-error      { font-size: 12px; color: #c0392b; }
 .sum-retry-link { background: none; border: none; color: var(--green-dark); cursor: pointer; font-size: 12px; text-decoration: underline; padding: 0; }
 
+/* ── Analysis metrics box ── */
+.sum-metrics-box {
+  margin: 14px 16px 0;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--faint);
+  overflow: hidden;
+}
+.sum-metrics-head {
+  padding: 7px 12px;
+  font-size: 10px; font-weight: 500;
+  color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border-bottom: 0.5px solid var(--border);
+  background: var(--muted);
+  display: flex; align-items: center; gap: 5px;
+}
+.sum-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 0.5px solid var(--border);
+}
+.sum-metric-item {
+  padding: 10px 12px;
+  border-right: 0.5px solid var(--border);
+}
+.sum-metric-item:last-child { border-right: none; }
+.sum-metric-label {
+  font-size: 10px; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 5px;
+}
+.sum-metric-value { font-size: 18px; font-weight: 500; color: var(--text); }
+.sum-metric-badge {
+  display: inline-block; padding: 3px 9px;
+  border-radius: 3px; font-size: 11px; font-weight: 500;
+}
+.sum-metric-badge.positive { background: var(--green-light);  color: var(--green-darker); }
+.sum-metric-badge.neutral  { background: var(--muted);        color: var(--text-mid); }
+.sum-metric-badge.negative { background: #fdf0ef;             color: #c0392b; }
+.sum-metric-badge.formal   { background: var(--blue-light);   color: var(--blue-dark); }
+.sum-metric-badge.informal { background: var(--muted);        color: var(--text-mid); }
+
+.sum-speakers-row {
+  padding: 8px 12px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 0.5px solid var(--border);
+}
+.sum-speaker-label { font-size: 10px; color: var(--text-faint); white-space: nowrap; font-weight: 500; }
+.sum-speaker-bar-wrap { flex: 1; height: 5px; background: var(--blue-light); border-radius: 3px; overflow: hidden; }
+.sum-speaker-bar-de   { height: 100%; background: var(--green); border-radius: 3px; transition: width 0.6s ease; }
+
+.sum-main-topic { padding: 8px 12px; }
+.sum-main-topic-label {
+  font-size: 10px; font-weight: 500; color: var(--text-faint);
+  text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px;
+}
+.sum-main-topic-text { font-size: 12px; color: var(--text-mid); line-height: 1.55; }
+
 .sum-modal-summary {
   margin: 14px 16px 0;
   padding: 10px 12px;
@@ -536,6 +594,8 @@ body {
   color: var(--text-muted);
 }
 .sum-modal-body {
+  flex: 1;
+  min-height: 0;
   padding: 12px 16px 16px;
   overflow-y: auto;
   display: flex;

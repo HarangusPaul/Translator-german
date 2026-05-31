@@ -40,6 +40,7 @@ export default function Summaries() {
   const [messages,         setMessages]         = useState([]);
   const [loadingMessages,  setLoadingMessages]  = useState(false);
   const [generating,       setGenerating]       = useState(false);
+  const [analysis,         setAnalysis]         = useState(null);
 
   // ── Load session list ────────────────────────────────────────────────────
 
@@ -108,11 +109,13 @@ export default function Summaries() {
   function openModal(session) {
     setSelectedSession(session);
     setMessages([]);
+    setAnalysis(null);
   }
 
   function closeModal() {
     setSelectedSession(null);
     setMessages([]);
+    setAnalysis(null);
   }
 
   async function triggerSummary() {
@@ -154,6 +157,7 @@ export default function Summaries() {
             : s
         )
       );
+      if (result.analysis) setAnalysis(result.analysis);
     } catch (err) {
       console.error("Failed to generate summary:", err);
       setSelectedSession((prev) => prev ? { ...prev, summary_status: "error" } : prev);
@@ -251,6 +255,55 @@ export default function Summaries() {
                 <i className="ti ti-x" />
               </button>
             </div>
+
+            {/* Analysis Metrics Box */}
+            {analysis && (
+              <div className="sum-metrics-box">
+                <div className="sum-metrics-head">
+                  <i className="ti ti-chart-bar" /> Analysis Metrics
+                </div>
+                <div className="sum-metrics-grid">
+                  <div className="sum-metric-item">
+                    <div className="sum-metric-label">Sentiment</div>
+                    <span className={`sum-metric-badge ${analysis.sentiment.toLowerCase()}`}>
+                      {analysis.sentiment}
+                    </span>
+                  </div>
+                  <div className="sum-metric-item">
+                    <div className="sum-metric-label">Formality</div>
+                    <span className={`sum-metric-badge ${analysis.formality.toLowerCase()}`}>
+                      {analysis.formality}
+                    </span>
+                  </div>
+                  <div className="sum-metric-item">
+                    <div className="sum-metric-label">Total Words</div>
+                    <div className="sum-metric-value">{analysis.total_words}</div>
+                  </div>
+                  <div className="sum-metric-item">
+                    <div className="sum-metric-label">Avg / Turn</div>
+                    <div className="sum-metric-value">{analysis.avg_words_per_turn}</div>
+                  </div>
+                </div>
+                <div className="sum-speakers-row">
+                  <span className="sum-speaker-label">DE · {analysis.de_speaker_turns}</span>
+                  <div className="sum-speaker-bar-wrap">
+                    <div
+                      className="sum-speaker-bar-de"
+                      style={{
+                        width: `${(analysis.de_speaker_turns / Math.max(analysis.de_speaker_turns + analysis.en_speaker_turns, 1)) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="sum-speaker-label">{analysis.en_speaker_turns} · EN</span>
+                </div>
+                {analysis.main_topic && (
+                  <div className="sum-main-topic">
+                    <div className="sum-main-topic-label">Main Idea</div>
+                    <div className="sum-main-topic-text">{analysis.main_topic}</div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Summary section */}
             <div className="sum-modal-summary">
