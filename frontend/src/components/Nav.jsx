@@ -5,6 +5,7 @@ const TABS = [
   { id: "dashboard", icon: "ti-layout-dashboard", label: "Dashboard", authOnly: true },
   { id: "translator", icon: "ti-microphone", label: "Translator", authOnly: true },
   { id: "history", icon: "ti-history", label: "History", authOnly: true },
+  { id: "summaries", icon: "ti-file-text", label: "Summaries", authOnly: true },
   { id: "settings", icon: "ti-settings", label: "Settings", authOnly: true },
 ];
 

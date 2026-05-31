@@ -40,10 +40,11 @@ import firebase_admin
 from firebase_admin import auth as fb_auth
 from firebase_admin import credentials, firestore
 
-from config import ASRConfig, Direction, TranslationConfig, TTSConfig
+from config import ASRConfig, Direction, SummaryConfig, TranslationConfig, TTSConfig
 from asr_module import ASRModule
 from translation_module import TranslationModule
 from tts_module import TTSModule
+from summary_module import SummaryModule
 
 # ── Logging ────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -112,6 +113,138 @@ async def _get_models(direction: Direction) -> tuple[ASRModule, TranslationModul
         _pipeline_models[key] = (asr, translator, tts)
         logger.info("Models ready for %s", direction.value)
         return asr, translator, tts
+
+
+# ── Summary module (Gemma) state ──────────────────────────────────────────
+_summary_module: Optional[SummaryModule] = None
+_summary_load_lock = asyncio.Lock()
+_summary_generation_lock = asyncio.Lock()
+
+
+async def _get_summary_module() -> SummaryModule:
+    global _summary_module
+    if _summary_module:
+        return _summary_module
+
+    async with _summary_load_lock:
+        if _summary_module:
+            return _summary_module
+
+        module = SummaryModule(SummaryConfig())
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, module.load)
+        _summary_module = module
+        return _summary_module
+
+
+def _build_transcript_for_summary(messages: list[dict], direction: Direction) -> str:
+    # Build a compact bilingual transcript from saved Firestore message pairs.
+    # This is fed into Gemma to generate a session summary.
+    src_is_de = direction.src_lang == "de"
+    lines: list[str] = []
+    for m in messages:
+        src = (m.get("source_text") or "").strip()
+        tr = (m.get("translated_text") or "").strip()
+        if not src and not tr:
+            continue
+
+        if src_is_de:
+            # de_to_en: source=German, translated=English
+            lines.append(f"DE: {src}\nEN: {tr}".strip())
+        else:
+            # en_to_de: source=English, translated=German
+            lines.append(f"EN: {src}\nDE: {tr}".strip())
+    return "\n\n".join(lines).strip()
+
+
+async def _generate_and_persist_session_summary(
+    uid: str, session_id: str, direction: Direction
+) -> None:
+    """
+    Generates a summary once and persists it into:
+      users/{uid}/sessions/{session_id}
+    This avoids "losing" summaries via in-memory caching.
+    """
+    if not session_id:
+        return
+
+    sess_ref = (
+        db.collection("users").document(uid).collection("sessions").document(session_id)
+    )
+
+    # 1) Check if we already have a saved summary.
+    def _get_session_data():
+        doc = sess_ref.get()
+        return doc.to_dict() if doc.exists else None
+
+    data = await asyncio.to_thread(_get_session_data)
+    if data and data.get("summary_status") == "done" and data.get("summary"):
+        return
+    if data and data.get("summary_status") == "pending":
+        return
+
+    # 2) Mark as pending so we don't start multiple generations.
+    await asyncio.to_thread(
+        lambda: sess_ref.set(
+            {
+                "summary_status": "pending",
+            },
+            merge=True,
+        )
+    )
+
+    try:
+        # 3) Load messages from Firestore.
+        def _read_messages():
+            msgs = []
+            for d in (
+                sess_ref.collection("messages").order_by("timestamp").stream()
+            ):
+                msgs.append(d.to_dict())
+            return msgs
+
+        messages = await asyncio.to_thread(_read_messages)
+        transcript = _build_transcript_for_summary(messages, direction)
+        if not transcript:
+            await asyncio.to_thread(
+                lambda: sess_ref.set(
+                    {"summary_status": "done", "summary": ""},
+                    merge=True,
+                )
+            )
+            return
+
+        # 4) Generate summary (run in a lock so only one model.generate at a time).
+        async with _summary_generation_lock:
+            summary_module = await _get_summary_module()
+
+            output_language = "German" if direction.src_lang == "de" else "English"
+            summary_text = await asyncio.to_thread(
+                summary_module.summarize, transcript, output_language
+            )
+
+        # 5) Persist.
+        await asyncio.to_thread(
+            lambda: sess_ref.set(
+                {
+                    "summary": summary_text,
+                    "summary_status": "done",
+                    "summary_generated_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+            )
+        )
+    except Exception as exc:
+        logger.exception("Summary generation failed for %s/%s", uid, session_id)
+        await asyncio.to_thread(
+            lambda: sess_ref.set(
+                {
+                    "summary_status": "error",
+                    "summary_error": str(exc),
+                },
+                merge=True,
+            )
+        )
 
 
 # ── Auth helper ────────────────────────────────────────────────────────────
@@ -427,6 +560,9 @@ class StreamingTranslationPipeline:
 async def websocket_endpoint(ws: WebSocket) -> None:
     await ws.accept()
     pipeline: Optional[StreamingTranslationPipeline] = None
+    uid: Optional[str] = None
+    session_id: Optional[str] = None
+    direction: Optional[Direction] = None
 
     try:
         # ── Init frame ──────────────────────────────────────────────────
@@ -459,7 +595,8 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             await ws.close(code=1008)
             return
 
-        asr, translator, tts_mod = await _get_models(direction)
+        # direction is guaranteed now
+        asr, translator, tts_mod = await _get_models(direction)  # type: ignore[arg-type]
 
         pipeline = StreamingTranslationPipeline(
             uid=uid,
@@ -511,6 +648,12 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         if pipeline:
             pipeline.cleanup()
         logger.info("WS session ended")
+
+        # Generate a persistent summary once the client disconnects (session end).
+        if uid and session_id and direction:
+            asyncio.create_task(
+                _generate_and_persist_session_summary(uid=uid, session_id=session_id, direction=direction)
+            )
 
 
 # ── REST — sessions ────────────────────────────────────────────────────────
@@ -618,17 +761,23 @@ async def delete_session(session_id: str, uid: str = Depends(get_current_user)):
 
 
 @app.get("/sessions/{session_id}/messages")
-async def list_messages(session_id: str, uid: str = Depends(get_current_user)):
+async def list_messages(
+    session_id: str,
+    limit: Optional[int] = None,
+    uid: str = Depends(get_current_user),
+):
     def _list() -> list:
-        docs = (
+        q = (
             db.collection("users")
             .document(uid)
             .collection("sessions")
             .document(session_id)
             .collection("messages")
             .order_by("timestamp")
-            .stream()
         )
+        if limit is not None:
+            q = q.limit(limit)
+        docs = q.stream()
         return [{"id": d.id, **d.to_dict()} for d in docs]
 
     return await asyncio.to_thread(_list)
