@@ -18,7 +18,8 @@
       "PowerShell(python -m pip list 2>&1 | Where-Object { $_ -match \"torch|faster|transform|edge.tts|whisper|spacy|marian|fastapi|uvicorn\" })",
       "Bash(Copy-Item \"D:\\\\faculty\\\\nlp\\\\HitlerTranslator\\\\frontend\\\\public\\\\audio-processor.js\" \"D:\\\\faculty\\\\nlp\\\\HitlerTranslator\\\\frontend\\\\dist\\\\audio-processor.js\" -Force)",
       "Bash(Write-Host \"Copied\")",
-      "PowerShell(Copy-Item *)"
+      "PowerShell(Copy-Item *)",
+      "Bash(dir D:\\\\NLP\\\\Translator\\\\Translator-german *)"
     ]
   }
 }
