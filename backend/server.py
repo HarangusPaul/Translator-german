@@ -764,3 +764,58 @@ async def list_messages(
         return [{"id": d.id, **d.to_dict()} for d in docs]
 
     return await asyncio.to_thread(_list)
+
+
+# ── REST — standalone summarize ────────────────────────────────────────────
+
+class SummarizeMessage(BaseModel):
+    sender:          str
+    source_text:     str
+    translated_text: str
+    direction:       str = "de_to_en"
+    timestamp:       Optional[str] = None
+
+
+class SummarizeRequest(BaseModel):
+    conversation_time: str
+    duration_seconds:  Optional[int] = None
+    output_language:   str = "English"
+    messages:          list[SummarizeMessage]
+
+
+@app.post("/summarize")
+async def summarize_conversation(
+    body: SummarizeRequest,
+    uid: str = Depends(get_current_user),
+):
+    if not body.messages:
+        raise HTTPException(status_code=400, detail="messages list is empty")
+
+    lines: list[str] = []
+    for msg in body.messages:
+        src = (msg.source_text or "").strip()
+        tr  = (msg.translated_text or "").strip()
+        if src: lines.append(f"{msg.sender}: {src}")
+        if tr:  lines.append(f"(translation): {tr}")
+
+    transcript = "\n".join(lines).strip()
+    if not transcript:
+        raise HTTPException(status_code=400, detail="all messages are empty")
+
+    try:
+        async with _summary_generation_lock:
+            module = await _get_summary_module()
+            summary_text = await asyncio.to_thread(
+                module.summarize, transcript, body.output_language
+            )
+    except Exception:
+        logger.exception("POST /summarize — model error")
+        raise HTTPException(status_code=500, detail="Summary generation failed")
+
+    return {
+        "summary":           summary_text,
+        "message_count":     len(body.messages),
+        "first_sender":      body.messages[0].sender,
+        "conversation_time": body.conversation_time,
+        "duration_seconds":  body.duration_seconds,
+    }

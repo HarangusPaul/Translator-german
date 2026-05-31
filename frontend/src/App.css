@@ -493,7 +493,39 @@ body {
   align-items: center;
   justify-content: space-between;
 }
+/* ── Summary badges (session list) ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { display: inline-block; animation: spin 1s linear infinite; }
+.sum-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%; font-size: 11px;
+}
+.sum-badge.done    { background: var(--green-light); color: var(--green-dark); }
+.sum-badge.pending { background: #fef9ec; color: #b07800; }
+.sum-badge.error   { background: #fdf0ef; color: #c0392b; }
+.sum-badge.none    { background: var(--muted); color: var(--text-faint); }
+
 .sum-modal-title { font-size: 15px; font-weight: 500; }
+
+/* ── Summary modal content ── */
+.sum-summary-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+}
+.sum-summary-head .notes-label { margin-bottom: 0; }
+.sum-generate-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: var(--radius);
+  border: 0.5px solid var(--green); background: var(--green-light);
+  color: var(--green-dark); font-size: 12px; cursor: pointer;
+}
+.sum-generate-btn:hover { background: var(--green-mid); }
+.sum-generate-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sum-generating { color: var(--text-faint); font-style: italic; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.sum-text       { font-size: 12px; color: var(--text-muted); line-height: 1.6; white-space: pre-wrap; }
+.sum-none       { font-size: 12px; color: var(--text-faint); font-style: italic; }
+.sum-error      { font-size: 12px; color: #c0392b; }
+.sum-retry-link { background: none; border: none; color: var(--green-dark); cursor: pointer; font-size: 12px; text-decoration: underline; padding: 0; }
+
 .sum-modal-summary {
   margin: 14px 16px 0;
   padding: 10px 12px;

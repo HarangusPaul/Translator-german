@@ -1,143 +1,109 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { apiFetch } from "../api";
+
 
 function formatDate(ts) {
   if (!ts) return "";
   const d = ts?._seconds ? new Date(ts._seconds * 1000) : new Date(ts);
   if (isNaN(d)) return "";
-  return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" }) +
-    " · " +
-    d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const now  = new Date();
+  const diff = now - d;
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (diff < 86_400_000)  return `Today, ${time}`;
+  if (diff < 172_800_000) return `Yesterday, ${time}`;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" }) + `, ${time}`;
 }
 
-function directionLabel(direction) {
-  return direction === "de_to_en" ? "DE→EN" : "EN→DE";
+function dirLabel(dir) {
+  return dir === "de_to_en" ? "DE→EN" : "EN→DE";
+}
+
+function SummaryBadge({ status, summary }) {
+  if (summary && status === "done")
+    return <span className="sum-badge done" title="Has summary"><i className="ti ti-check" /></span>;
+  if (status === "pending")
+    return <span className="sum-badge pending" title="Generating…"><i className="ti ti-loader-2 spin" /></span>;
+  if (status === "error")
+    return <span className="sum-badge error" title="Generation failed"><i className="ti ti-alert-triangle" /></span>;
+  return <span className="sum-badge none" title="No summary yet"><i className="ti ti-minus" /></span>;
 }
 
 export default function Summaries() {
   const { getFreshToken } = useAuth();
-  const [sessions, setSessions] = useState([]);
-  const [loadingSessions, setLoadingSessions] = useState(true);
-  const [filteringNonEmpty, setFilteringNonEmpty] = useState(false);
-  const [search, setSearch] = useState("");
 
-  const [selectedSession, setSelectedSession] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [loadingSummary, setLoadingSummary] = useState(false);
+  const [sessions,         setSessions]         = useState([]);
+  const [loadingSessions,  setLoadingSessions]  = useState(true);
+  const [search,           setSearch]           = useState("");
+
+  const [selectedSession,  setSelectedSession]  = useState(null);
+  const [messages,         setMessages]         = useState([]);
+  const [loadingMessages,  setLoadingMessages]  = useState(false);
+  const [generating,       setGenerating]       = useState(false);
+
+  // ── Load session list ────────────────────────────────────────────────────
 
   useEffect(() => {
-    async function loadSessions() {
+    let cancelled = false;
+    async function load() {
       try {
         const token = await getFreshToken();
-        const data = await apiFetch("/sessions", token);
-
-        // Keep only sessions that have at least 1 saved message.
-        setFilteringNonEmpty(true);
+        const all   = await apiFetch("/sessions", token);
+        // Filter out sessions with no messages (check each in parallel, limit 1)
         const checks = await Promise.all(
-          data.map(async (s) => {
+          all.map(async (s) => {
             try {
               const msgs = await apiFetch(`/sessions/${s.id}/messages?limit=1`, token);
               return msgs?.length > 0;
-            } catch (err) {
-              console.error("Failed to check messages for session:", s.id, err);
+            } catch {
               return false;
             }
           })
         );
-        const nonEmpty = data.filter((_, idx) => checks[idx]);
-        setSessions(nonEmpty);
+        if (!cancelled) setSessions(all.filter((_, i) => checks[i]));
       } catch (err) {
         console.error("Failed to load sessions:", err);
       } finally {
-        setFilteringNonEmpty(false);
-        setLoadingSessions(false);
+        if (!cancelled) setLoadingSessions(false);
       }
     }
-    loadSessions();
+    load();
+    return () => { cancelled = true; };
   }, [getFreshToken]);
 
-  useEffect(() => {
-    if (!selectedSession) return undefined;
+  // ── Load messages when a session is opened ───────────────────────────────
 
+  useEffect(() => {
+    if (!selectedSession) return;
     let cancelled = false;
     setLoadingMessages(true);
-
-    async function loadMessages() {
+    async function load() {
       try {
         const token = await getFreshToken();
-        const data = await apiFetch(`/sessions/${selectedSession.id}/messages`, token);
-        if (!cancelled) setMessages(data);
-      } catch (err) {
-        console.error("Failed to load transcript:", err);
+        const data  = await apiFetch(`/sessions/${selectedSession.id}/messages`, token);
+        if (!cancelled) setMessages(data ?? []);
+      } catch {
         if (!cancelled) setMessages([]);
       } finally {
         if (!cancelled) setLoadingMessages(false);
       }
     }
-
-    loadMessages();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedSession, getFreshToken]);
-
-  useEffect(() => {
-    if (!selectedSession) return undefined;
-
-    let cancelled = false;
-    let timer = null;
-
-    async function refreshSession() {
-      setLoadingSummary(true);
-      try {
-        const token = await getFreshToken();
-        const fresh = await apiFetch(`/sessions/${selectedSession.id}`, token);
-        if (cancelled) return;
-        setSelectedSession((prev) => (prev ? { ...prev, ...fresh } : fresh));
-
-        // If the backend is still generating, poll until it's done.
-        if (fresh?.summary_status === "pending") {
-          timer = window.setTimeout(refreshSession, 2500);
-        }
-      } catch (err) {
-        console.error("Failed to refresh session summary:", err);
-      } finally {
-        if (!cancelled) setLoadingSummary(false);
-      }
-    }
-
-    refreshSession();
-
-    return () => {
-      cancelled = true;
-      if (timer) window.clearTimeout(timer);
-    };
+    load();
+    return () => { cancelled = true; };
   }, [selectedSession?.id, getFreshToken]);
 
+  // (polling removed — /summarize returns the result synchronously)
+
+  // ── Keyboard: Escape closes modal ────────────────────────────────────────
+
   useEffect(() => {
-    if (!selectedSession) return undefined;
-
-    function onKeyDown(e) {
-      if (e.key === "Escape") {
-        setSelectedSession(null);
-        setMessages([]);
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    if (!selectedSession) return;
+    const onKey = (e) => { if (e.key === "Escape") closeModal(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [selectedSession]);
 
-  const filteredSessions = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return sessions;
-    return sessions.filter((s) => {
-      const haystack = `${s.title ?? ""} ${s.notes ?? ""}`.toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [sessions, search]);
+  // ── Actions ──────────────────────────────────────────────────────────────
 
   function openModal(session) {
     setSelectedSession(session);
@@ -149,16 +115,78 @@ export default function Summaries() {
     setMessages([]);
   }
 
+  async function triggerSummary() {
+    if (!selectedSession || generating || loadingMessages) return;
+    setGenerating(true);
+    setSelectedSession((prev) => prev ? { ...prev, summary: null, summary_status: "pending" } : prev);
+    try {
+      const token = await getFreshToken();
+
+      const ts = selectedSession.created_at;
+      const conversation_time = ts?._seconds
+        ? new Date(ts._seconds * 1000).toISOString()
+        : new Date().toISOString();
+
+      const output_language = selectedSession.direction === "de_to_en" ? "English" : "German";
+
+      const msgPayload = messages.map((m) => ({
+        sender:          m.direction === "de_to_en" ? "german_speaker" : "english_speaker",
+        source_text:     m.source_text     || "",
+        translated_text: m.translated_text || "",
+        direction:       m.direction       || selectedSession.direction,
+        timestamp: m.created_at?._seconds
+          ? new Date(m.created_at._seconds * 1000).toISOString()
+          : undefined,
+      }));
+
+      const result = await apiFetch("/summarize", token, {
+        method: "POST",
+        body: { conversation_time, output_language, messages: msgPayload },
+      });
+
+      setSelectedSession((prev) =>
+        prev ? { ...prev, summary: result.summary, summary_status: "done" } : prev
+      );
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.id === selectedSession.id
+            ? { ...s, summary: result.summary, summary_status: "done" }
+            : s
+        )
+      );
+    } catch (err) {
+      console.error("Failed to generate summary:", err);
+      setSelectedSession((prev) => prev ? { ...prev, summary_status: "error" } : prev);
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  // ── Filtered list ─────────────────────────────────────────────────────────
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return sessions;
+    return sessions.filter((s) =>
+      (s.title ?? "").toLowerCase().includes(q)
+    );
+  }, [sessions, search]);
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
+  const hasSummary = selectedSession?.summary && selectedSession.summary_status === "done";
+  const isPending  = selectedSession?.summary_status === "pending";
+  const isError    = selectedSession?.summary_status === "error";
+
   return (
     <div className="page-summaries">
+
+      {/* ── Header ── */}
       <div className="sum-header">
         <div>
           <h1>Summaries</h1>
-          <p>{sessions.length} sessions{filteringNonEmpty ? " (filtering…)" : ""}</p>
+          <p>{sessions.length} session{sessions.length !== 1 ? "s" : ""}</p>
         </div>
-      </div>
-
-      <div className="sum-toolbar">
         <div className="search-box">
           <i className="ti ti-search" style={{ fontSize: 13 }} />
           <input
@@ -169,45 +197,54 @@ export default function Summaries() {
         </div>
       </div>
 
+      {/* ── Column headers ── */}
       <div className="sum-table-head">
-        <div className="th">Session</div>
+        <div className="th" style={{ flex: 2 }}>Session</div>
         <div className="th">Direction</div>
         <div className="th">Last active</div>
+        <div className="th" style={{ textAlign: "center" }}>Summary</div>
       </div>
 
-      {loadingSessions && (
-        <div className="sum-empty">Loading sessions…</div>
+      {/* ── Session rows ── */}
+      {loadingSessions && <div className="sum-empty">Loading sessions…</div>}
+
+      {!loadingSessions && filtered.length === 0 && (
+        <div className="sum-empty">
+          {sessions.length === 0 ? "No sessions with messages yet." : "No sessions match your search."}
+        </div>
       )}
 
-      {!loadingSessions && filteredSessions.map((s) => (
+      {!loadingSessions && filtered.map((s) => (
         <button key={s.id} className="sum-row" onClick={() => openModal(s)}>
-          <div>
-            <div className="hr-title">{s.title}</div>
+          <div style={{ flex: 2 }}>
+            <div className="hr-title">{s.title || "Untitled session"}</div>
             {s.notes && <div className="hr-preview">{s.notes}</div>}
           </div>
           <div>
             <span className={`hr-dir ${s.direction === "de_to_en" ? "de" : "en"}`}>
-              {directionLabel(s.direction)}
+              {dirLabel(s.direction)}
             </span>
           </div>
           <div className="hr-date">{formatDate(s.last_active)}</div>
+          <div style={{ textAlign: "center" }}>
+            <SummaryBadge status={s.summary_status} summary={s.summary} />
+          </div>
         </button>
       ))}
 
-      {!loadingSessions && filteredSessions.length === 0 && (
-        <div className="sum-empty">
-          {sessions.length === 0 ? "No sessions yet." : "No sessions match your search."}
-        </div>
-      )}
-
+      {/* ── Modal ── */}
       {selectedSession && (
         <div className="sum-modal-backdrop" onClick={closeModal}>
           <div className="sum-modal" onClick={(e) => e.stopPropagation()}>
+
+            {/* Modal header */}
             <div className="sum-modal-head">
               <div>
-                <div className="sum-modal-title">{selectedSession.title}</div>
+                <div className="sum-modal-title">
+                  {selectedSession.title || "Untitled session"}
+                </div>
                 <div className="preview-date">
-                  {formatDate(selectedSession.last_active)} · {directionLabel(selectedSession.direction)}
+                  {formatDate(selectedSession.last_active)} · {dirLabel(selectedSession.direction)}
                 </div>
               </div>
               <button className="icon-btn" title="Close" onClick={closeModal}>
@@ -215,49 +252,79 @@ export default function Summaries() {
               </button>
             </div>
 
-            {loadingSummary && !selectedSession.summary && selectedSession.summary_status === "pending" && (
-              <div className="sum-modal-summary">
+            {/* Summary section */}
+            <div className="sum-modal-summary">
+              <div className="sum-summary-head">
                 <div className="notes-label">Summary</div>
-                Generating summary…
+                <div style={{ display: "flex", gap: 6 }}>
+                  {hasSummary && (
+                    <button
+                      className="icon-btn"
+                      title="Regenerate summary"
+                      onClick={() => triggerSummary()}
+                      disabled={generating || loadingMessages}
+                    >
+                      <i className={`ti ti-refresh${generating ? " spin" : ""}`} />
+                    </button>
+                  )}
+                  {!hasSummary && !isPending && (
+                    <button
+                      className="sum-generate-btn"
+                      onClick={() => triggerSummary()}
+                      disabled={generating || loadingMessages}
+                    >
+                      <i className={`ti ti-sparkles${generating ? " spin" : ""}`} />
+                      {loadingMessages ? "Loading…" : "Generate"}
+                    </button>
+                  )}
+                </div>
               </div>
-            )}
 
-            {selectedSession.summary && (
-              <div className="sum-modal-summary">
-                <div className="notes-label">Summary</div>
-                {selectedSession.summary}
-              </div>
-            )}
+              {isPending && (
+                <p className="sum-generating">
+                  <i className="ti ti-loader-2 spin" /> Generating summary… (may take several minutes on CPU)
+                </p>
+              )}
+              {hasSummary && (
+                <p className="sum-text">{selectedSession.summary}</p>
+              )}
+              {isError && !isPending && (
+                <p className="sum-error">
+                  Generation failed.{" "}
+                  <button className="sum-retry-link" onClick={() => triggerSummary(true)}>
+                    Try again
+                  </button>
+                </p>
+              )}
+              {!hasSummary && !isPending && !isError && (
+                <p className="sum-none">No summary yet — click Generate to create one.</p>
+              )}
+            </div>
 
-            {!selectedSession.summary && selectedSession.summary_status === "error" && (
-              <div className="sum-modal-summary">
-                <div className="notes-label">Summary</div>
-                Summary generation failed.
-              </div>
-            )}
-
+            {/* Transcript */}
             <div className="sum-modal-body">
               {loadingMessages && <div className="sum-empty">Loading transcript…</div>}
               {!loadingMessages && messages.length === 0 && (
-                <div className="sum-empty">No transcript messages for this session.</div>
+                <div className="sum-empty">No transcript messages.</div>
               )}
-              {!loadingMessages && messages.map((m, i) => (
-                <div key={m.id ?? i} className="sum-msg-pair">
-                  <div className="pmsg src">
-                    <div className="pmsg-lang">
-                      {selectedSession.direction === "de_to_en" ? "German" : "English"}
+              {!loadingMessages && messages.map((m, i) => {
+                const srcLabel = selectedSession.direction === "de_to_en" ? "German" : "English";
+                const tgtLabel = selectedSession.direction === "de_to_en" ? "English" : "German";
+                return (
+                  <div key={m.id ?? i} className="sum-msg-pair">
+                    <div className="pmsg src">
+                      <div className="pmsg-lang">{srcLabel}</div>
+                      {m.source_text}
                     </div>
-                    {m.source_text}
-                  </div>
-                  <div className="pmsg tr" style={{ marginTop: 6 }}>
-                    <div className="pmsg-lang">
-                      {selectedSession.direction === "de_to_en" ? "English" : "German"}
+                    <div className="pmsg tr" style={{ marginTop: 6 }}>
+                      <div className="pmsg-lang">{tgtLabel}</div>
+                      {m.translated_text}
                     </div>
-                    {m.translated_text}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+
           </div>
         </div>
       )}
