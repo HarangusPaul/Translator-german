@@ -80,19 +80,8 @@ class TTSConfig:
 
 @dataclass
 class SummaryConfig:
-    # Your requested model
-    model_id: str = "OBLITERATUS/gemma-4-E4B-it-OBLITERATED"
-
-    # Generation controls
-    max_input_tokens: int = 2048
-    max_new_tokens: int = 256
-    temperature: float = 0.2
-    top_p: float = 0.9
-    repetition_penalty: float = 1.1
-    do_sample: bool = True
-
-    # Input trimming to avoid context overflows
-    max_transcript_chars: int = 16_000
-
-    # If True, rely on device_map="auto" (requires accelerate)
-    use_device_map_auto: bool = True
+    # philschmid/bart-large-cnn-samsum: ~400 MB, public, fine-tuned on dialogue
+    model_id: str = "philschmid/bart-large-cnn-samsum"
+    max_new_tokens: int = 150
+    do_sample: bool = False
+    max_transcript_chars: int = 6_000

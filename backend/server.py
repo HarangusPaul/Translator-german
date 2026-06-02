@@ -781,3 +781,124 @@ async def list_messages(
         return [{"id": d.id, **d.to_dict()} for d in docs]
 
     return await asyncio.to_thread(_list)
+
+
+# ── Conversation analytics helpers ────────────────────────────────────────
+
+_POS_WORDS = {
+    "good","great","excellent","yes","agree","helpful","clear","understand","perfect",
+    "thank","thanks","right","correct","sure","happy","glad","wonderful","nice",
+    "absolutely","definitely","pleasure","appreciate","well","fine","success",
+    "solved","resolved","satisfied","positive","confirm","confirmed","approved","accept",
+}
+_NEG_WORDS = {
+    "no","problem","issue","difficult","bad","wrong","disagree","confused","sorry",
+    "unfortunately","mistake","error","fail","failed","impossible","never","nothing",
+    "disappointed","frustrated","concern","worried","trouble","unclear","misunderstanding",
+    "deny","denied","reject","rejected",
+}
+_FORMAL_MARKERS = {
+    "please","would","could","should","regarding","pursuant","therefore","however",
+    "moreover","furthermore","accordingly","hence","thus","whereas","sincerely",
+    "respectfully","kindly","hereby","aforementioned",
+}
+_INFORMAL_MARKERS = {
+    "yeah","yep","nope","gonna","wanna","gotta","ok","okay","hey","hi","cool","awesome",
+}
+
+
+def _sentiment(texts: list[str]) -> tuple[str, float]:
+    words = [w.strip(".,!?;:'\"") for w in " ".join(texts).lower().split()]
+    pos = sum(1 for w in words if w in _POS_WORDS)
+    neg = sum(1 for w in words if w in _NEG_WORDS)
+    total = pos + neg or 1
+    ratio = pos / total
+    if ratio >= 0.60:
+        return "Positive", round(ratio, 2)
+    if ratio <= 0.40:
+        return "Negative", round(1 - ratio, 2)
+    return "Neutral", 0.50
+
+
+def _formality(texts: list[str]) -> str:
+    words = [w.strip(".,!?;:'\"") for w in " ".join(texts).lower().split()]
+    formal   = sum(1 for w in words if w in _FORMAL_MARKERS)
+    informal = sum(1 for w in words if w in _INFORMAL_MARKERS)
+    sentences = [s.strip() for s in " ".join(texts).replace("!", ".").replace("?", ".").split(".") if s.strip()]
+    avg_len = sum(len(s.split()) for s in sentences) / max(len(sentences), 1)
+    return "Formal" if (formal > informal or avg_len >= 12) else "Informal"
+
+
+# ── REST — standalone summarize ────────────────────────────────────────────
+
+class SummarizeMessage(BaseModel):
+    sender:          str
+    source_text:     str
+    translated_text: str
+    direction:       str = "de_to_en"
+    timestamp:       Optional[str] = None
+
+
+class SummarizeRequest(BaseModel):
+    conversation_time: str
+    duration_seconds:  Optional[int] = None
+    output_language:   str = "English"
+    messages:          list[SummarizeMessage]
+
+
+@app.post("/summarize")
+async def summarize_conversation(
+    body: SummarizeRequest,
+    uid: str = Depends(get_current_user),
+):
+    if not body.messages:
+        raise HTTPException(status_code=400, detail="messages list is empty")
+
+    lines: list[str] = []
+    for msg in body.messages:
+        src = (msg.source_text or "").strip()
+        tr  = (msg.translated_text or "").strip()
+        if src: lines.append(f"{msg.sender}: {src}")
+        if tr:  lines.append(f"(translation): {tr}")
+
+    transcript = "\n".join(lines).strip()
+    if not transcript:
+        raise HTTPException(status_code=400, detail="all messages are empty")
+
+    try:
+        async with _summary_generation_lock:
+            module = await _get_summary_module()
+            summary_text = await asyncio.to_thread(
+                module.summarize, transcript, body.output_language
+            )
+    except Exception:
+        logger.exception("POST /summarize — model error")
+        raise HTTPException(status_code=500, detail="Summary generation failed")
+
+    all_text = [m.source_text + " " + m.translated_text for m in body.messages]
+    sentiment_label, sentiment_score = _sentiment(all_text)
+    formality_label = _formality(all_text)
+    total_words  = sum(len((m.source_text + " " + m.translated_text).split()) for m in body.messages)
+    avg_words    = round(total_words / len(body.messages)) if body.messages else 0
+    de_turns     = sum(1 for m in body.messages if m.direction == "de_to_en")
+    en_turns     = sum(1 for m in body.messages if m.direction == "en_to_de")
+    topic_sentences = [s.strip() for s in summary_text.replace("!", ".").replace("?", ".").split(".") if s.strip()]
+    main_topic   = (topic_sentences[0] + ".") if topic_sentences else ""
+
+    return {
+        "summary":           summary_text,
+        "message_count":     len(body.messages),
+        "first_sender":      body.messages[0].sender,
+        "conversation_time": body.conversation_time,
+        "duration_seconds":  body.duration_seconds,
+        "analysis": {
+            "sentiment":          sentiment_label,
+            "sentiment_score":    sentiment_score,
+            "formality":          formality_label,
+            "main_topic":         main_topic,
+            "total_words":        total_words,
+            "avg_words_per_turn": avg_words,
+            "de_speaker_turns":   de_turns,
+            "en_speaker_turns":   en_turns,
+        },
+    }
