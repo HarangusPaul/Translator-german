@@ -27,6 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # ── Path setup so existing backend modules are importable ──────────────────
 sys.path.insert(0, str(Path(__file__).parent))
@@ -66,8 +67,17 @@ firebase_admin.initialize_app(credentials.Certificate(_cred_path))
 db = firestore.client()
 
 # ── FastAPI app ────────────────────────────────────────────────────────────
-app = FastAPI(title="HitlerTranslator API")
+app = FastAPI(title="HitlerTranslator API", redirect_slashes=False)
 
+
+class _StripTrailingSlash(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path != "/" and request.url.path.endswith("/"):
+            request.scope["path"] = request.url.path.rstrip("/")
+        return await call_next(request)
+
+
+app.add_middleware(_StripTrailingSlash)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
