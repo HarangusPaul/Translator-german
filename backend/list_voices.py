@@ -4,6 +4,7 @@ Helper script – list available Microsoft Edge TTS voices filtered by locale.
 Usage:
     python list_voices.py          # list all voices
     python list_voices.py de       # filter by locale prefix (e.g. 'de', 'en-US')
+        Stefan Lupu
 """
 from __future__ import annotations
 

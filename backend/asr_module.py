@@ -10,6 +10,7 @@ Design notes
 - faster-whisper's internal VAD filter removes segments that are likely noise,
   acting as a second guard after Silero VAD upstream.
 - Word-level timestamps are kept for future subtitle/sync applications.
+Haragus Paul Andrei
 """
 from __future__ import annotations
 

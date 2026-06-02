@@ -13,6 +13,7 @@ Design notes
 - A forced flush on None sentinel ensures the final partial sentence is translated.
 - MarianMT is moved to CUDA when available; inference runs in a dedicated thread
   pool to avoid blocking the asyncio event loop.
+  Haragus Paul Andrei
 """
 from __future__ import annotations
 

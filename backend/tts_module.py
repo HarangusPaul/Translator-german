@@ -12,6 +12,7 @@ Design notes
 - Synthesis and decode run concurrently with playback: while the speaker plays
   sentence N, sentence N+1 is already being synthesised (1-deep pipeline).
 - sounddevice.play(blocking=True) runs in a thread pool to avoid stalling the loop.
+    Haragus Paul Andrei
 """
 from __future__ import annotations
 

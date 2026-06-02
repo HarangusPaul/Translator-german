@@ -1,6 +1,7 @@
 """
 Generates a short plain-text summary of a translator session using a
 HuggingFace BART seq2seq model fine-tuned on dialogue summarization.
+Haragus Paul Andrei + Stefan Lupu
 """
 from __future__ import annotations
 

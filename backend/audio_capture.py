@@ -8,6 +8,7 @@ sounddevice callback (OS thread)
     → _segmentation_thread (daemon thread, owns VAD state)
         → asyncio utterance_queue (async-safe via call_soon_threadsafe)
             → async generator stream() consumed by the pipeline
+            Stefan Lupu
 """
 from __future__ import annotations
 
